@@ -1,78 +1,69 @@
 import MetaTrader5 as mt5
 import pandas as pd
 from datetime import datetime
+import psycopg2
 import streamlit as st
 import plotly.graph_objs as go
-import numpy as np
-import psycopg2
 
-# # MetaTrader 5 terminaline bağlanın
-# login = 51890414
-# password = 'D9sYWpr&NwN!nY'
-# server = "ICMarketsEU-Demo"
+# MetaTrader 5 terminaline bağlantıyı başlat
+if not mt5.initialize():
+    st.error("MetaTrader 5 initialization failed")  # Bağlantı başarısızsa hata mesajı göster
+    mt5.shutdown()  # MetaTrader 5 terminalini kapat
+    exit()  # Programı sonlandır
 
-# # MetaTrader 5 hesabına giriş yapın
-# if not mt5.login(login, password=password, server=server):
-#     st.error("MetaTrader 5 login failed")
-#     mt5.shutdown()
-#     exit()
-
-# PostgreSQL bağlantı bilgileri
+# PostgreSQL veritabanı bağlantı bilgilerini döndüren fonksiyon
 def get_db_connection():
+    """PostgreSQL veritabanına bağlantı sağlar."""
     return psycopg2.connect(
-        dbname="postgres",
-        user="postgres",
-        password="123",
-        host="localhost",
-        port="5432"
+        dbname="mt5_db",  # Veritabanı adı
+        user="postgres",  # Kullanıcı adı
+        password="123",  # Şifre
+        host="localhost",  # Host adresi
+        port="5432"  # Port numarası
     )
 
-# Verileri veritabanına yazma işlevi
-def write_to_db(df, table_name):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    
-    create_table_query = f"""
-    CREATE TABLE IF NOT EXISTS {table_name} (
-        time TIMESTAMP,
-        open FLOAT,
-        high FLOAT,
-        low FLOAT,
-        close FLOAT,
-        tick_volume INT,
-        symbol VARCHAR(10)
-    )
-    """
-    cur.execute(create_table_query)
-    conn.commit()
 
-    # Verileri tabloya ekle
-    for index, row in df.iterrows():
-        insert_query = f"""
-        INSERT INTO {table_name} (time, open, high, low, close, tick_volume, symbol) 
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """
-        cur.execute(insert_query, (row.name, row['open'], row['high'], row['low'], row['close'], row['tick_volume'], row['symbol']))
-    
-    conn.commit()
-    cur.close()
-    conn.close()
+def save_to_postgresql(df, interval):
+    """Verileri PostgreSQL veritabanına kaydeder, varsa mevcut kayıtları kontrol eder."""
+    conn = get_db_connection()  # Veritabanı bağlantısını al
+    cursor = conn.cursor()  # SQL komutlarını çalıştırmak için cursor oluştur
 
-# Streamlit arayüzü
-st.title("MT5 and Technical Indicators")
+    for index, row in df.iterrows():  # DataFrame'deki her satırı döngüye al
+        # Önce mevcut kayıtları kontrol et
+        cursor.execute("""
+            SELECT EXISTS (
+                SELECT 1 FROM mt5_db 
+                WHERE time = %s AND symbol = %s AND interval = %s
+            );
+        """, (index, row['symbol'], interval))
+        exists = cursor.fetchone()[0]
+
+        if not exists:
+            # Eğer kayıt mevcut değilse, yeni veriyi ekle
+            cursor.execute("""
+                INSERT INTO mt5_db (time, open, high, low, close, tick_volume, symbol, interval)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """, (index, row['open'], row['high'], row['low'], row['close'], row['tick_volume'], row['symbol'], row['interval']))
+
+    conn.commit()  # Değişiklikleri veritabanına kaydet
+    cursor.close()  # Cursor'ı kapat
+    conn.close()  # Veritabanı bağlantısını kapat
+
+# Streamlit arayüzünü oluştur
+st.title("MT5 Data Fetcher and Technical Indicators")  # Uygulama başlığını belirle
 
 # Varsayılan semboller
 default_symbols = ["XAUUSD", "XAUEUR"]
 
-# Kullanıcıdan sembol ekleme işlemleri
-symbols = st.session_state.get('symbols', default_symbols)
+# Kullanıcının seçtiği sembolleri al
+symbols = st.session_state.get('symbols', default_symbols)  # Önceden seçilmiş sembolleri al, yoksa varsayılanları kullan
 
 # Kullanıcıdan sembol ve tarih aralığını al
-selected_symbols = st.multiselect("Select the symbols:", symbols, default=symbols)
-start_date = st.date_input("Enter the start date:", datetime(2024, 7, 24))
-end_date = st.date_input("Enter the end date:", datetime(2024, 7, 25))
+selected_symbols = st.multiselect("Select the symbols:", symbols, default=symbols)  # Seçilecek sembolleri çoklu seçim olarak sun
+start_date = st.date_input("Enter the start date:", datetime(2024, 7, 27))  # Başlangıç tarihini kullanıcıdan al
+end_date = st.date_input("Enter the end date:", datetime(2024, 7, 28))  # Bitiş tarihini kullanıcıdan al
 
-# Interval seçenekleri
+# Zaman dilimi seçenekleri
 intervals = {
     "1 minute": mt5.TIMEFRAME_M1,
     "5 minutes": mt5.TIMEFRAME_M5,
@@ -83,122 +74,106 @@ intervals = {
     "1 day": mt5.TIMEFRAME_D1
 }
 
-interval_option = st.selectbox("Select the interval:", list(intervals.keys()))
-timeframe = intervals[interval_option]
+interval_option = st.selectbox("Select the interval:", list(intervals.keys()))  # Zaman dilimi seçeneklerini sun
+timeframe = intervals[interval_option]  # Kullanıcının seçtiği zaman dilimini belirle
 
 # İndikatör seçimleri
-indicators = st.multiselect("Select the indicators to display:", ["MA", "MACD", "RSI"], default=["MA"])
+indicators = st.multiselect("Select the indicators to display:", ["MA", "MACD", "RSI"], default=["MA", "MACD", "RSI"])  # Görüntülenecek indikatörleri seç
 
-# Renk paleti
+# Renk paleti tanımla
 colors = ["blue", "red", "green", "orange", "purple"]
 
 def get_next_color(colors, index):
-    return colors[index % len(colors)]
+    """Renk paletinden döngüsel olarak renk seçer."""
+    return colors[index % len(colors)]  # Renkleri döngüsel olarak seçer
 
 # Verileri çekmek ve listelemek için buton
-if st.button("Fetch Data"):
-    fig_price_ma = go.Figure()
-    fig_macd = go.Figure()
-    fig_rsi = go.Figure()
+if st.button("Fetch Data"):  # Butona basıldığında veri çekme işlemi başlar
+    fig_price_ma = go.Figure()  # Fiyat ve Hareketli Ortalama grafiği için boş bir figür oluştur
+    fig_macd = go.Figure()      # MACD grafiği için boş bir figür oluştur
+    fig_rsi = go.Figure()       # RSI grafiği için boş bir figür oluştur
 
-    all_data = []  # Verilerin tutulacağı liste
+    all_data = []  # Tüm sembollerin verilerini saklayacak liste
 
-    for symbol_index, symbol in enumerate(selected_symbols):
+    for symbol_index, symbol in enumerate(selected_symbols):  # Her sembol için döngü başlat
         # Tarihleri datetime formatına çevir
-        utc_from = datetime.combine(start_date, datetime.min.time())
-        utc_to = datetime.combine(end_date, datetime.min.time())
+        utc_from = datetime.combine(start_date, datetime.min.time())  # Başlangıç tarihini datetime nesnesine dönüştür
+        utc_to = datetime.combine(end_date, datetime.min.time())  # Bitiş tarihini datetime nesnesine dönüştür
 
         # Tarihsel verileri çek
-        rates = mt5.copy_rates_range(symbol, timeframe, utc_from, utc_to)
+        rates = mt5.copy_rates_range(symbol, timeframe, utc_from, utc_to)  # MetaTrader 5'ten tarihsel verileri çek
 
-        if rates is None or len(rates) == 0:
-            st.error(f"No data found for {symbol}")
-            continue
+        if rates is None or len(rates) == 0:  # Eğer veri yoksa
+            st.error(f"No data found for {symbol}")  # Hata mesajı göster
+            continue  # Bir sonraki sembole geç
 
         # Verileri DataFrame'e dönüştür
-        df = pd.DataFrame(rates)
-        df['time'] = pd.to_datetime(df['time'], unit='s')
-        df.set_index('time', inplace=True)
-        df = df[['open', 'high', 'low', 'close', 'tick_volume']]
-        df['symbol'] = symbol  # Sembol bilgisi ekle
+        df = pd.DataFrame(rates)  # Verileri DataFrame'e çevir
+        df['time'] = pd.to_datetime(df['time'], unit='s')  # Zaman bilgisini datetime formatına dönüştür
+        df.set_index('time', inplace=True)  # Zamanı index olarak ayarla
+        df = df[['open', 'high', 'low', 'close', 'tick_volume']]  # İlgili sütunları seç
+        df['symbol'] = symbol  # Sembol bilgisini ekle
+        df['interval'] = interval_option  # Interval bilgisini ekle
 
         # Verileri listeye ekle
-        all_data.append(df)
+        all_data.append(df)  # DataFrame'i veriler listesine ekle
 
-        # Verileri veritabanına yaz
-        write_to_db(df, 'symbol_data')
+        # Verileri PostgreSQL'e kaydet
+        save_to_postgresql(df, interval_option)  # Verileri veritabanına kaydet
 
-        # Renk seçimi
-        color = get_next_color(colors, symbol_index)
+        # Mum çubukları grafiği
+        fig_price_ma.add_trace(go.Candlestick(
+            x=df.index,
+            open=df['open'],
+            high=df['high'],
+            low=df['low'],
+            close=df['close'],
+            name=f'{symbol} Candlestick'  # Grafiğin adı
+        ))
 
-        if "MA" in indicators:
+        if "MA" in indicators:  # Eğer Hareketli Ortalama (MA) seçilmişse
             # MA hesaplama (30 ve 50 günlük)
-            df['MA_30'] = df['close'].rolling(window=30).mean()
-            df['MA_50'] = df['close'].rolling(window=50).mean()
+            df['MA_30'] = df['close'].rolling(window=30).mean()  # 30 günlük hareketli ortalama
+            df['MA_50'] = df['close'].rolling(window=50).mean()  # 50 günlük hareketli ortalama
 
-            # Fiyat grafiği ve MA çizgileri
-            fig_price_ma.add_trace(go.Scatter(x=df.index, y=df['close'], mode='lines', name=f'{symbol} Close Price', line=dict(color=color)))
-            fig_price_ma.add_trace(go.Scatter(x=df.index, y=df['MA_30'], mode='lines', name=f'{symbol} MA 30', line=dict(color=get_next_color(colors, symbol_index + 1))))
-            fig_price_ma.add_trace(go.Scatter(x=df.index, y=df['MA_50'], mode='lines', name=f'{symbol} MA 50', line=dict(color=get_next_color(colors, symbol_index + 2))))
+            # MA çizgilerini grafiğe ekle
+            fig_price_ma.add_trace(go.Scatter(x=df.index, y=df['MA_30'], mode='lines', name=f'{symbol} MA 30', 
+                line=dict(color=get_next_color(colors, symbol_index + 1))))
+            fig_price_ma.add_trace(go.Scatter(x=df.index, y=df['MA_50'], mode='lines', name=f'{symbol} MA 50',
+                line=dict(color=get_next_color(colors, symbol_index + 2))))
 
-        if "MACD" in indicators:
+        if "MACD" in indicators:  # Eğer MACD seçilmişse
             # MACD hesaplama
-            short_ema = df['close'].ewm(span=12, adjust=False).mean()
-            long_ema = df['close'].ewm(span=26, adjust=False).mean()
-            df['MACD'] = short_ema - long_ema
-            df['Signal_Line'] = df['MACD'].ewm(span=9, adjust=False).mean()
+            short_ema = df['close'].ewm(span=12, adjust=False).mean()  # Kısa vadeli üssel hareketli ortalama
+            long_ema = df['close'].ewm(span=26, adjust=False).mean()  # Uzun vadeli üssel hareketli ortalama
+            df['MACD'] = short_ema - long_ema  # MACD değerini hesapla
+            df['Signal_Line'] = df['MACD'].ewm(span=9, adjust=False).mean()  # MACD sinyal çizgisi
 
             # MACD ve Signal Line grafikleri
-            fig_macd.add_trace(go.Scatter(x=df.index, y=df['MACD'], mode='lines', name=f'{symbol} MACD', line=dict(color=color)))
-            fig_macd.add_trace(go.Scatter(x=df.index, y=df['Signal_Line'], mode='lines', name=f'{symbol} Signal Line', line=dict(color=get_next_color(colors, symbol_index + 1))))
+            fig_macd.add_trace(go.Scatter(x=df.index, y=df['MACD'], mode='lines', name=f'{symbol} MACD',
+                line=dict(color=get_next_color(colors, symbol_index))))
+            fig_macd.add_trace(go.Scatter(x=df.index, y=df['Signal_Line'], mode='lines', name=f'{symbol} Signal Line',
+                line=dict(color=get_next_color(colors, symbol_index + 1))))
 
-        if "RSI" in indicators:
+        if "RSI" in indicators:  # Eğer RSI seçilmişse
             # RSI hesaplama
-            delta = df['close'].diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-            rs = gain / loss
-            df['RSI'] = 100 - (100 / (1 + rs))
+            delta = df['close'].diff()  # Fiyat değişimini hesapla
+            gain = delta.where(delta > 0, 0)  # Pozitif değişimleri al
+            loss = -delta.where(delta < 0, 0)  # Negatif değişimleri al
+            avg_gain = gain.rolling(window=14).mean()  # Ortalama kazanç
+            avg_loss = loss.rolling(window=14).mean()  # Ortalama kayıp
+
+            rs = avg_gain / avg_loss  # Güçlülük Oranı
+            df['RSI'] = 100 - (100 / (1 + rs))  # RSI hesapla
 
             # RSI grafiği
-            fig_rsi.add_trace(go.Scatter(x=df.index, y=df['RSI'], mode='lines', name=f'{symbol} RSI', line=dict(color=color)))
+            fig_rsi.add_trace(go.Scatter(x=df.index, y=df['RSI'], mode='lines', name=f'{symbol} RSI',
+                line=dict(color=get_next_color(colors, symbol_index))))
 
-    # Verileri birleştir
-    combined_df = pd.concat(all_data)
+    # Grafikleri Streamlit'te göster
+    st.plotly_chart(fig_price_ma)  # Fiyat ve Hareketli Ortalama grafiğini göster
+    st.plotly_chart(fig_macd)      # MACD grafiğini göster
+    st.plotly_chart(fig_rsi)       # RSI grafiğini göster
 
-    # Veri çerçevesini görüntüle
-    st.write("### Combined Data")
-    st.write(combined_df)
-
-    # Grafiklerin başlıkları ve eksen etiketleri
-    if "MA" in indicators:
-        fig_price_ma.update_layout(
-            title='Price and Moving Averages',
-            xaxis_title='Date',
-            yaxis_title='Price',
-            yaxis=dict(
-                rangemode="tozero"  # Y eksenini minimum değerle sıfırlamak için
-            )
-        )
-        st.plotly_chart(fig_price_ma)
-
-    if "MACD" in indicators:
-        fig_macd.update_layout(
-            title='MACD and Signal Line',
-            xaxis_title='Date',
-            yaxis_title='MACD Value'
-        )
-        st.plotly_chart(fig_macd)
-
-    if "RSI" in indicators:
-        fig_rsi.add_hline(y=70, line_dash="dash", line_color="red")
-        fig_rsi.add_hline(y=30, line_dash="dash", line_color="blue")
-        fig_rsi.update_layout(
-            title='RSI Indicator',
-            xaxis_title='Date',
-            yaxis_title='RSI Value'
-        )
-        st.plotly_chart(fig_rsi)
-
-# MetaTrader 5 terminal bağlantısını kapatın
+# MetaTrader 5 terminalini kapat
 mt5.shutdown()
