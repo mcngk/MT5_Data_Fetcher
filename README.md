@@ -86,5 +86,3 @@ Bu proje MIT lisansı altında lisanslanmıştır. Daha fazla bilgi için [LICEN
 Herhangi bir soru veya öneriniz varsa, lütfen [mustafacangok@hotmail.com](mailto:mustafacangok@hotmail.com) adresi üzerinden benimle iletişime geçin.
 
 ```
-
-Bu temel yapı, projenizin genel bilgilerini ve kullanım talimatlarını açıkça belirler. Projeye özel detayları ve kendi bilgilerinizi eklemeyi unutmayın!
