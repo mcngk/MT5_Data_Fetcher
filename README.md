@@ -3,7 +3,9 @@
 
 ## Proje Açıklaması
 
-MT5 Data Fetcher and Technical Indicators, MetaTrader 5 (MT5) kullanarak finansal piyasa verilerini çeken ve bu verileri PostgreSQL veritabanına kaydeden bir uygulamadır. Ayrıca, kullanıcıların seçtiği teknik göstergelerle (MA, MACD, RSI) grafikler oluşturur ve bu grafikleri Streamlit kullanarak görüntüler.
+MT5 Data Fetcher and Technical Indicators, MetaTrader 5 (MT5) kullanarak finansal piyasa verilerini
+çeken ve bu verileri PostgreSQL veritabanına kaydeden bir uygulamadır. Ayrıca, kullanıcıların seçtiği
+ teknik göstergelerle (MA, MACD, RSI) grafikler oluşturur ve bu grafikleri Streamlit kullanarak görüntüler.
 
 ## Özellikler
 
