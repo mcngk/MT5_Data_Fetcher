@@ -22,6 +22,20 @@ def get_db_connection():
         port="5432"  # Port numarası
     )
 
+def load_from_postgresql(symbol, interval):
+    """PostgreSQL veritabanından verileri yükler."""
+    conn = get_db_connection()  # Veritabanı bağlantısını al
+    query = """
+        SELECT time, open, high, low, close, tick_volume, symbol, interval 
+        FROM mt5_db 
+        WHERE symbol = %s AND interval = %s
+        ORDER BY time ASC;
+    """
+    df = pd.read_sql_query(query, conn, params=(symbol, interval))  # SQL sorgusunu çalıştır ve verileri DataFrame'e al
+    conn.close()  # Veritabanı bağlantısını kapat
+    df.set_index('time', inplace=True)  # Zamanı index olarak ayarla
+    return df
+
 
 def save_to_postgresql(df, interval):
     """Verileri PostgreSQL veritabanına kaydeder, varsa mevcut kayıtları kontrol eder."""
@@ -174,6 +188,13 @@ if st.button("Fetch Data"):  # Butona basıldığında veri çekme işlemi başl
     st.plotly_chart(fig_price_ma)  # Fiyat ve Hareketli Ortalama grafiğini göster
     st.plotly_chart(fig_macd)      # MACD grafiğini göster
     st.plotly_chart(fig_rsi)       # RSI grafiğini göster
+
+    # Veritabanından verileri çekip göster
+    st.subheader("Data from PostgreSQL")  # Veritabanı verileri başlığı
+    for symbol in selected_symbols:
+        st.write(f"**{symbol}**")
+        df_from_db = load_from_postgresql(symbol, interval_option)  # Veritabanından veri yükle
+        st.dataframe(df_from_db)  # DataFrame'i göster
 
 # MetaTrader 5 terminalini kapat
 mt5.shutdown()
