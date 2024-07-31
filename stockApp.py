@@ -91,20 +91,20 @@ interval_option = st.selectbox("Select the interval:", list(intervals.keys()))  
 timeframe = intervals[interval_option]  # Kullanıcının seçtiği zaman dilimini belirle
 
 # İndikatör seçimleri
-indicators = st.multiselect("Select the indicators to display:", ["MA", "MACD", "RSI"], default=["MA", "MACD", "RSI"])  # Görüntülenecek indikatörleri seç
+indicators = st.multiselect("Select the indicators to display:", ["MA", "MACD", "RSI", "SMA", "EMA", "WMA"], default=["MA", "MACD", "RSI", "SMA", "EMA", "WMA"])  # Görüntülenecek indikatörleri seç
 
 # Renk paleti tanımla
 colors = ["blue", "red", "green", "orange", "purple"]
 
 def get_next_color(colors, index):
-    """Renk paletinden döngüsel olarak renk seçer."""
+    """Renk paletinden döngüsel olarak renk seç."""
     return colors[index % len(colors)]  # Renkleri döngüsel olarak seçer
 
 # Verileri çekmek ve listelemek için buton
 if st.button("Fetch Data"):  # Butona basıldığında veri çekme işlemi başlar
-    fig_price_ma = go.Figure()  # Fiyat ve Hareketli Ortalama grafiği için boş bir figür oluştur
-    fig_macd = go.Figure()      # MACD grafiği için boş bir figür oluştur
-    fig_rsi = go.Figure()       # RSI grafiği için boş bir figür oluştur
+    fig_price = go.Figure()  # Fiyat grafiği için boş bir figür oluştur
+    fig_macd = go.Figure()   # MACD grafiği için boş bir figür oluştur
+    fig_rsi = go.Figure()    # RSI grafiği için boş bir figür oluştur
 
     all_data = []  # Tüm sembollerin verilerini saklayacak liste
 
@@ -135,26 +135,48 @@ if st.button("Fetch Data"):  # Butona basıldığında veri çekme işlemi başl
         save_to_postgresql(df, interval_option)  # Verileri veritabanına kaydet
 
         # Mum çubukları grafiği
-        fig_price_ma.add_trace(go.Candlestick(
+        fig_price.add_trace(go.Candlestick(
             x=df.index,
             open=df['open'],
             high=df['high'],
             low=df['low'],
             close=df['close'],
-            name=f'{symbol} Candlestick',  # Grafiğin adı
-            line=dict(width=2)  # Mum çubuklarının çizgi kalınlığını ayarla
+            name=f'{symbol} Candlestick'  # Grafiğin adı
         ))
 
-        if "MA" in indicators:  # Eğer Hareketli Ortalama (MA) seçilmişse
-            # MA hesaplama (30 ve 50 günlük)
-            df['MA_30'] = df['close'].rolling(window=30).mean()  # 30 günlük hareketli ortalama
-            df['MA_50'] = df['close'].rolling(window=50).mean()  # 50 günlük hareketli ortalama
+        if "SMA" in indicators:  # Eğer SMA seçilmişse
+            # SMA hesaplama (30 ve 50 günlük)
+            df['SMA_30'] = df['close'].rolling(window=30).mean()  # 30 günlük SMA
+            df['SMA_50'] = df['close'].rolling(window=50).mean()  # 50 günlük SMA
 
-            # MA çizgilerini grafiğe ekle
-            fig_price_ma.add_trace(go.Scatter(x=df.index, y=df['MA_30'], mode='lines', name=f'{symbol} MA 30', 
-                line=dict(color=get_next_color(colors, symbol_index + 1), width=2)))  # Çizgi kalınlığını ayarla
-            fig_price_ma.add_trace(go.Scatter(x=df.index, y=df['MA_50'], mode='lines', name=f'{symbol} MA 50',
-                line=dict(color=get_next_color(colors, symbol_index + 2), width=2)))  # Çizgi kalınlığını ayarla
+            # SMA çizgilerini grafiğe ekle
+            fig_price.add_trace(go.Scatter(x=df.index, y=df['SMA_30'], mode='lines', name=f'{symbol} SMA 30', 
+                line=dict(color=get_next_color(colors, symbol_index + 1))))
+            fig_price.add_trace(go.Scatter(x=df.index, y=df['SMA_50'], mode='lines', name=f'{symbol} SMA 50',
+                line=dict(color=get_next_color(colors, symbol_index + 2))))
+
+        if "EMA" in indicators:  # Eğer EMA seçilmişse
+            # EMA hesaplama (12 ve 26 günlük)
+            df['EMA_12'] = df['close'].ewm(span=12, adjust=False).mean()  # 12 günlük EMA
+        
+            df['EMA_26'] = df['close'].ewm(span=26, adjust=False).mean()  # 26 günlük EMA
+
+            # EMA çizgilerini grafiğe ekle
+            fig_price.add_trace(go.Scatter(x=df.index, y=df['EMA_12'], mode='lines', name=f'{symbol} EMA 12', 
+                line=dict(color=get_next_color(colors, symbol_index + 3))))
+            fig_price.add_trace(go.Scatter(x=df.index, y=df['EMA_26'], mode='lines', name=f'{symbol} EMA 26',
+                line=dict(color=get_next_color(colors, symbol_index + 4))))
+
+        if "WMA" in indicators:  # Eğer WMA seçilmişse
+            # WMA hesaplama (14 ve 30 günlük)
+            df['WMA_14'] = df['close'].rolling(window=14).apply(lambda x: (x * range(1, 15)).sum() / sum(range(1, 15)))  # 14 günlük WMA
+            df['WMA_30'] = df['close'].rolling(window=30).apply(lambda x: (x * range(1, 31)).sum() / sum(range(1, 31)))  # 30 günlük WMA
+
+            # WMA çizgilerini grafiğe ekle
+            fig_price.add_trace(go.Scatter(x=df.index, y=df['WMA_14'], mode='lines', name=f'{symbol} WMA 14', 
+                line=dict(color=get_next_color(colors, symbol_index + 5))))
+            fig_price.add_trace(go.Scatter(x=df.index, y=df['WMA_30'], mode='lines', name=f'{symbol} WMA 30',
+                line=dict(color=get_next_color(colors, symbol_index + 6))))
 
         if "MACD" in indicators:  # Eğer MACD seçilmişse
             # MACD hesaplama
@@ -165,9 +187,9 @@ if st.button("Fetch Data"):  # Butona basıldığında veri çekme işlemi başl
 
             # MACD ve Signal Line grafikleri
             fig_macd.add_trace(go.Scatter(x=df.index, y=df['MACD'], mode='lines', name=f'{symbol} MACD',
-                line=dict(color=get_next_color(colors, symbol_index), width=2)))  # Çizgi kalınlığını ayarla
+                line=dict(color=get_next_color(colors, symbol_index))))
             fig_macd.add_trace(go.Scatter(x=df.index, y=df['Signal_Line'], mode='lines', name=f'{symbol} Signal Line',
-                line=dict(color=get_next_color(colors, symbol_index + 1), width=2)))  # Çizgi kalınlığını ayarla
+                line=dict(color=get_next_color(colors, symbol_index + 1))))
 
         if "RSI" in indicators:  # Eğer RSI seçilmişse
             # RSI hesaplama
@@ -182,14 +204,14 @@ if st.button("Fetch Data"):  # Butona basıldığında veri çekme işlemi başl
 
             # RSI grafiği
             fig_rsi.add_trace(go.Scatter(x=df.index, y=df['RSI'], mode='lines', name=f'{symbol} RSI',
-                line=dict(color=get_next_color(colors, symbol_index), width=2)))  # Çizgi kalınlığını ayarla
+                line=dict(color=get_next_color(colors, symbol_index))))
 
     # Grafikleri Streamlit'te göster
-    st.plotly_chart(fig_price_ma, use_container_width=True)  # Fiyat ve Hareketli Ortalama grafiğini göster
-    st.plotly_chart(fig_macd, use_container_width=True)      # MACD grafiğini göster
-    st.plotly_chart(fig_rsi, use_container_width=True)       # RSI grafiğini göster
+    st.plotly_chart(fig_price)  # Fiyat grafiğini göster
+    st.plotly_chart(fig_macd)   # MACD grafiğini göster
+    st.plotly_chart(fig_rsi)    # RSI grafiğini göster
 
-    # Veritabanından verileri çekip göster
+    # Veritabanından verileri göster
     st.subheader("Data from PostgreSQL")  # Veritabanı verileri başlığı
     for symbol in selected_symbols:
         st.write(f"**{symbol}**")
