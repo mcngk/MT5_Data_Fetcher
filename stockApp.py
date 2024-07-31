@@ -36,13 +36,12 @@ def load_from_postgresql(symbol, interval):
     df.set_index('time', inplace=True)  # Zamanı index olarak ayarla
     return df
 
-
 def save_to_postgresql(df, interval):
     """Verileri PostgreSQL veritabanına kaydeder, varsa mevcut kayıtları kontrol eder."""
     conn = get_db_connection()  # Veritabanı bağlantısını al
     cursor = conn.cursor()  # SQL komutlarını çalıştırmak için cursor oluştur
 
-    for index, row in df.iterrows():  # DataFrame'deki her satırı döngüye al
+    for index, row in df.iterrows():  # DataFrame'deki her satırı döngüye al 
         # Önce mevcut kayıtları kontrol et
         cursor.execute("""
             SELECT EXISTS (
@@ -50,7 +49,7 @@ def save_to_postgresql(df, interval):
                 WHERE time = %s AND symbol = %s AND interval = %s
             );
         """, (index, row['symbol'], interval))
-        exists = cursor.fetchone()[0]
+        exists = cursor.fetchone()[0] #SQL sorgusunun sonucunda dönen verinin ilk sütununu almak için kullanılır.
 
         if not exists:
             # Eğer kayıt mevcut değilse, yeni veriyi ekle
@@ -142,7 +141,8 @@ if st.button("Fetch Data"):  # Butona basıldığında veri çekme işlemi başl
             high=df['high'],
             low=df['low'],
             close=df['close'],
-            name=f'{symbol} Candlestick'  # Grafiğin adı
+            name=f'{symbol} Candlestick',  # Grafiğin adı
+            line=dict(width=2)  # Mum çubuklarının çizgi kalınlığını ayarla
         ))
 
         if "MA" in indicators:  # Eğer Hareketli Ortalama (MA) seçilmişse
@@ -152,9 +152,9 @@ if st.button("Fetch Data"):  # Butona basıldığında veri çekme işlemi başl
 
             # MA çizgilerini grafiğe ekle
             fig_price_ma.add_trace(go.Scatter(x=df.index, y=df['MA_30'], mode='lines', name=f'{symbol} MA 30', 
-                line=dict(color=get_next_color(colors, symbol_index + 1))))
+                line=dict(color=get_next_color(colors, symbol_index + 1), width=2)))  # Çizgi kalınlığını ayarla
             fig_price_ma.add_trace(go.Scatter(x=df.index, y=df['MA_50'], mode='lines', name=f'{symbol} MA 50',
-                line=dict(color=get_next_color(colors, symbol_index + 2))))
+                line=dict(color=get_next_color(colors, symbol_index + 2), width=2)))  # Çizgi kalınlığını ayarla
 
         if "MACD" in indicators:  # Eğer MACD seçilmişse
             # MACD hesaplama
@@ -165,9 +165,9 @@ if st.button("Fetch Data"):  # Butona basıldığında veri çekme işlemi başl
 
             # MACD ve Signal Line grafikleri
             fig_macd.add_trace(go.Scatter(x=df.index, y=df['MACD'], mode='lines', name=f'{symbol} MACD',
-                line=dict(color=get_next_color(colors, symbol_index))))
+                line=dict(color=get_next_color(colors, symbol_index), width=2)))  # Çizgi kalınlığını ayarla
             fig_macd.add_trace(go.Scatter(x=df.index, y=df['Signal_Line'], mode='lines', name=f'{symbol} Signal Line',
-                line=dict(color=get_next_color(colors, symbol_index + 1))))
+                line=dict(color=get_next_color(colors, symbol_index + 1), width=2)))  # Çizgi kalınlığını ayarla
 
         if "RSI" in indicators:  # Eğer RSI seçilmişse
             # RSI hesaplama
@@ -182,12 +182,12 @@ if st.button("Fetch Data"):  # Butona basıldığında veri çekme işlemi başl
 
             # RSI grafiği
             fig_rsi.add_trace(go.Scatter(x=df.index, y=df['RSI'], mode='lines', name=f'{symbol} RSI',
-                line=dict(color=get_next_color(colors, symbol_index))))
+                line=dict(color=get_next_color(colors, symbol_index), width=2)))  # Çizgi kalınlığını ayarla
 
     # Grafikleri Streamlit'te göster
-    st.plotly_chart(fig_price_ma)  # Fiyat ve Hareketli Ortalama grafiğini göster
-    st.plotly_chart(fig_macd)      # MACD grafiğini göster
-    st.plotly_chart(fig_rsi)       # RSI grafiğini göster
+    st.plotly_chart(fig_price_ma, use_container_width=True)  # Fiyat ve Hareketli Ortalama grafiğini göster
+    st.plotly_chart(fig_macd, use_container_width=True)      # MACD grafiğini göster
+    st.plotly_chart(fig_rsi, use_container_width=True)       # RSI grafiğini göster
 
     # Veritabanından verileri çekip göster
     st.subheader("Data from PostgreSQL")  # Veritabanı verileri başlığı
