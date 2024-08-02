@@ -73,11 +73,11 @@ def insert_crossover_dates(crossover_dates):
     conn = get_db_connection()
     cursor = conn.cursor()
     for record in crossover_dates:
-        # 'record['Date']' tarih ve saat bilgilerini içermeli
         cursor.execute("""
-            INSERT INTO crossover_dates_tb (symbol, date) VALUES (%s, %s)
+            INSERT INTO crossover_dates_tb (symbol, date, intersecting_indicators) 
+            VALUES (%s, %s, %s)
             ON CONFLICT (symbol, date) DO NOTHING;
-        """, (record['Symbol'], record['Date']))
+        """, (record['Symbol'], record['Date'], record['Intersecting Indicators']))
     conn.commit()
     cursor.close()
     conn.close()
@@ -86,7 +86,7 @@ def insert_crossover_dates(crossover_dates):
 st.title("MT5 Data Fetcher and Technical Indicators")
 
 # Varsayılan semboller
-default_symbols = ["XAUUSD", "XAUEUR"]
+default_symbols = ["XAUUSD"] 
 
 # Kullanıcının seçtiği sembolleri al
 symbols = st.session_state.get('symbols', default_symbols)
@@ -111,15 +111,19 @@ interval_option = st.selectbox("Select the interval:", list(intervals.keys()))
 timeframe = intervals[interval_option]
 
 # İndikatör seçimleri
-indicators = st.multiselect("Select the indicators to display:", ["MA", "MACD", "RSI", "SMA", "EMA", "WMA"], default=["MA", "MACD", "RSI", "SMA", "EMA", "WMA"])
+indicators = st.multiselect("Select the indicators to display:", ["MA20", "MA50", "MACD", "RSI", "SMA", "EMA", "WMA"], default=["MA20", "MA50"])
 
 # Renk paleti tanımla
-colors = ["blue", "red", "green", "orange", "purple"]
+colors = [
+    'blue', 'green', 'red', 'cyan', 'magenta', 'yellow', 'black', 'purple', 'orange', 'brown',
+    'pink', 'gray', 'lime', 'maroon', 'navy', 'olive', 'teal', 'aqua', 'fuchsia', 'gold'
+]
 
 def get_next_color(colors, index):
-    """Renk paletinden döngüsel olarak renk seç."""
-    return colors[index % len(colors)]
-
+    if index < len(colors):
+        return colors[index]
+    else:
+        return colors[index % len(colors)]
 
 def find_crossovers(series1, series2):
     """
@@ -166,29 +170,31 @@ if st.button("Fetch Data"):
             decreasing=dict(line=dict(color='red'))
         ))
 
-        # MA
-        if "MA" in indicators:
-            df['MA_14'] = df['close'].rolling(window=14).mean()
-            df['MA_30'] = df['close'].rolling(window=30).mean()
-
-            fig.add_trace(go.Scatter(x=df.index, y=df['MA_14'], mode='lines', name=f'{symbol} MA 14',
+        # MA20 ve MA50
+        if "MA20" in indicators:
+            df['MA_20'] = df['close'].rolling(window=20).mean()
+            fig.add_trace(go.Scatter(x=df.index, y=df['MA_20'], mode='lines', name=f'{symbol} MA 20',
                 line=dict(color=get_next_color(colors, symbol_index + 10))))
-            fig.add_trace(go.Scatter(x=df.index, y=df['MA_30'], mode='lines', name=f'{symbol} MA 30',
+
+        if "MA50" in indicators:
+            df['MA_50'] = df['close'].rolling(window=50).mean()
+            fig.add_trace(go.Scatter(x=df.index, y=df['MA_50'], mode='lines', name=f'{symbol} MA 50',
                 line=dict(color=get_next_color(colors, symbol_index + 11))))
 
-            ma_crossover_indices = find_crossovers(df['MA_14'].dropna(), df['MA_30'].dropna())
+        if "MA20" in indicators and "MA50" in indicators:
+            ma_crossover_indices = find_crossovers(df['MA_20'].dropna(), df['MA_50'].dropna())
             ma_crossover_indices = ma_crossover_indices.astype(int)
-            ma_crossover_times = df.index[df.index.isin(df['MA_14'].dropna().index[ma_crossover_indices])]
+            ma_crossover_times = df.index[df.index.isin(df['MA_20'].dropna().index[ma_crossover_indices])]
 
             fig.add_trace(go.Scatter(
                 x=ma_crossover_times,
-                y=df['MA_14'].reindex(ma_crossover_times),
+                y=df['MA_20'].reindex(ma_crossover_times),
                 mode='markers',
                 marker=dict(symbol='x', color='cyan', size=10),
                 name=f'{symbol} MA Crossovers'
             ))
 
-            crossover_dates.extend({'Symbol': symbol, 'Date': time} for time in ma_crossover_times)
+            crossover_dates.extend({'Symbol': symbol, 'Date': time, 'Intersecting Indicators': 'MA20/MA50'} for time in ma_crossover_times)
 
         # SMA
         if "SMA" in indicators:
@@ -212,7 +218,7 @@ if st.button("Fetch Data"):
                 name=f'{symbol} SMA Crossovers'
             ))
 
-            crossover_dates.extend({'Symbol': symbol, 'Date': time} for time in sma_crossover_times)
+            crossover_dates.extend({'Symbol': symbol, 'Date': time, 'Intersecting Indicators': 'SMA30/SMA50'} for time in sma_crossover_times)
 
         # EMA
         if "EMA" in indicators:
@@ -236,7 +242,7 @@ if st.button("Fetch Data"):
                 name=f'{symbol} EMA Crossovers'
             ))
 
-            crossover_dates.extend({'Symbol': symbol, 'Date': time} for time in ema_crossover_times)
+            crossover_dates.extend({'Symbol': symbol, 'Date': time, 'Intersecting Indicators': 'EMA12/EMA26'} for time in ema_crossover_times)
 
         # WMA
         if "WMA" in indicators:
@@ -260,7 +266,7 @@ if st.button("Fetch Data"):
                 name=f'{symbol} WMA Crossovers'
             ))
 
-            crossover_dates.extend({'Symbol': symbol, 'Date': time} for time in wma_crossover_times)
+            crossover_dates.extend({'Symbol': symbol, 'Date': time, 'Intersecting Indicators': 'WMA14/WMA30'} for time in wma_crossover_times)
 
         # MACD
         if "MACD" in indicators:
