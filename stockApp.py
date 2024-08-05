@@ -37,11 +37,11 @@ def load_from_postgresql(symbol, interval):
     return df
 
 def save_to_postgresql(df, interval, symbol, start_date, end_date):
-    """Verileri PostgreSQL veritabanına kaydeder, varsa mevcut kayıtları kontrol eder."""
+    """Verileri PostgreSQL veritabanına kaydeder, varsa mevcut kayıtları kontrol eder"""
     conn = get_db_connection()
     cursor = conn.cursor()
     data_exists = False
-
+ 
     for index, row in df.iterrows():
         cursor.execute("""
             SELECT EXISTS (
