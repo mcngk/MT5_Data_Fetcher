@@ -304,6 +304,31 @@ def plot_indicators(df, indicators, fig, symbol_index, colors):
 
         fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], mode='lines', name=f'{df.symbol[0]} RSI',
             line=dict(color=get_next_color(colors, symbol_index + 9))))
+    
+     # Identify signals
+        crossover_dates = []
+        for i in range(1, len(df)):
+            if df['RSI'][i-1] < 30 and df['RSI'][i] >= 30:
+                crossover_dates.append(('Buy', df.index[i], df['symbol'][i], df['close'][i], df['RSI'][i]))
+            elif df['RSI'][i-1] > 70 and df['RSI'][i] <= 70:
+                crossover_dates.append(('Sell', df.index[i], df['symbol'][i], df['close'][i], df['RSI'][i]))
+
+        # # Store signals in PostgreSQL
+        # conn = psycopg2.get_db_connection()
+        # cur = conn.cursor()
+        # cur.execute('''CREATE TABLE IF NOT EXISTS rsi_signals (
+        #                 signal TEXT,
+        #                 date DATE,
+        #                 symbol TEXT,
+        #                 price NUMERIC,
+        #                 rsi NUMERIC
+        #             )''')
+        # insert_query = sql.SQL('INSERT INTO rsi_signals (signal, date, symbol, price, rsi) VALUES (%s, %s, %s, %s, %s)')
+        # cur.executemany(insert_query, crossover_dates)
+        # conn.commit()
+        # cur.close()
+        # conn.close()
+    
 
     return remove_duplicate_crossovers(crossover_dates)
 
@@ -398,7 +423,7 @@ if st.button("Fetch Data"):
         crossover_dates.extend(plot_indicators(df, indicators, fig, symbol_index, colors))
 
     # Tüm grafiği göster
-    #st.plotly_chart(fig)
+    st.plotly_chart(fig)
     
     # Crossover tarihlerini tablosunu göster ve PostgreSQL'e ekle
     if crossover_dates:
