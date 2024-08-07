@@ -74,10 +74,10 @@ def insert_crossover_dates(crossover_dates):
     cursor = conn.cursor()
     for record in crossover_dates:
         cursor.execute("""
-            INSERT INTO crossover_dates_tb (symbol, date, intersecting_indicators, Trend, Price, interval) 
+            INSERT INTO crossover_dates_tb (symbol, date, intersecting_indicators, Signal, Price, interval) 
             VALUES (%s, %s, %s, %s, %s, %s)
             ON CONFLICT (symbol, date) DO NOTHING;
-        """, (record['Symbol'], record['Date'], record['Intersecting Indicators'], record['Trend'], record['Price'], record['interval']))
+        """, (record['Symbol'], record['Date'], record['Intersecting Indicators'], record['Signal'], record['Price'], record['interval']))
     conn.commit()
     cursor.close()
     conn.close()
@@ -90,9 +90,9 @@ def find_crossovers(series1, series2):
     crossover_indices = np.where(np.diff(np.sign(diff)))[0] + 1
     return crossover_indices
 
-def remove_duplicate_crossovers(crossover_dates, time_threshold=timedelta(minutes=25)):
+def remove_duplicate_crossovers(crossover_dates, time_threshold=timedelta(minutes=1)):
     """
-    Kesişim noktaları arasında 25 dakika içinde tekrar olanları iptal eder.
+    Kesişim noktaları arasında 1 dakika içinde tekrar olanları iptal eder.
     """
     unique_dates = []
     last_date = None
@@ -108,6 +108,9 @@ def plot_indicators(df, indicators, fig, symbol_index, colors):
     """İndikatörleri hesaplar ve grafiğe ekler, kesişim noktalarını bulur ve veritabanına ekler."""
     crossover_dates = []
     
+     # Hafta sonları kapalı olan günleri hariç tutma
+    df = df[df.index.to_series().dt.dayofweek < 5]  # 0: Pazartesi, ..., 4: Cuma
+    
     # MA20 hesaplama ve grafiğe ekleme
     if "MA20" in indicators:
         df['MA_20'] = df['close'].rolling(window=20).mean()
@@ -120,11 +123,17 @@ def plot_indicators(df, indicators, fig, symbol_index, colors):
         fig.add_trace(go.Scatter(x=df.index, y=df['MA_50'], mode='lines', name=f'{df.symbol[0]} MA 50',
             line=dict(color=get_next_color(colors, symbol_index + 11))))
 
-        # MA20 ve MA50 crossover analizi
+        # MA20 ve MA50'nin aynı anda mevcut olduğu tarihlerde crossover analizi
         if "MA20" in indicators:
-            ma_crossover_indices = find_crossovers(df['MA_20'].dropna(), df['MA_50'].dropna())
+            # Hem MA20 hem de MA50'nin geçerli olduğu tarihlerdeki verileri seçin
+            valid_dates = df.dropna(subset=['MA_20', 'MA_50']).index
+
+            ma20_valid = df['MA_20'].reindex(valid_dates)
+            ma50_valid = df['MA_50'].reindex(valid_dates)
+            
+            ma_crossover_indices = find_crossovers(ma20_valid, ma50_valid)
             ma_crossover_indices = ma_crossover_indices.astype(int)
-            ma_crossover_times = df.index[df.index.isin(df['MA_20'].dropna().index[ma_crossover_indices])]
+            ma_crossover_times = valid_dates[ma_crossover_indices]
 
             fig.add_trace(go.Scatter(
                 x=ma_crossover_times,
@@ -138,7 +147,7 @@ def plot_indicators(df, indicators, fig, symbol_index, colors):
                 'Symbol': df.symbol[0],
                 'Date': time,
                 'Intersecting Indicators': 'MA20/MA50',
-                'Trend': 'Uptrend' if df['MA_20'].loc[time] > df['MA_50'].loc[time] else 'Downtrend',
+                'Signal': 'Buy' if df['MA_20'].loc[time] > df['MA_50'].loc[time] else 'Sell',
                 'Price': df['close'].loc[time],
                 'interval': interval_option
             } for time in ma_crossover_times)
@@ -147,17 +156,23 @@ def plot_indicators(df, indicators, fig, symbol_index, colors):
     if "SMA30" in indicators:
         df['SMA_30'] = df['close'].rolling(window=30).mean()
         fig.add_trace(go.Scatter(x=df.index, y=df['SMA_30'], mode='lines', name=f'{df.symbol[0]} SMA 30',
-            line=dict(color=get_next_color(colors, symbol_index + 1))))
+        line=dict(color=get_next_color(colors, symbol_index + 1))))
 
     if "SMA50" in indicators:
         df['SMA_50'] = df['close'].rolling(window=50).mean()
         fig.add_trace(go.Scatter(x=df.index, y=df['SMA_50'], mode='lines', name=f'{df.symbol[0]} SMA 50',
-            line=dict(color=get_next_color(colors, symbol_index + 2))))
+        line=dict(color=get_next_color(colors, symbol_index + 2))))
 
         if "SMA30" in indicators:
-            sma_crossover_indices = find_crossovers(df['SMA_30'].dropna(), df['SMA_50'].dropna())
+            # Hem SMA30 hem de SMA50'nin geçerli olduğu tarihlerdeki verileri seçin
+            valid_dates = df.dropna(subset=['SMA_30', 'SMA_50']).index
+
+            sma30_valid = df['SMA_30'].reindex(valid_dates)
+            sma50_valid = df['SMA_50'].reindex(valid_dates)
+            
+            sma_crossover_indices = find_crossovers(sma30_valid, sma50_valid)
             sma_crossover_indices = sma_crossover_indices.astype(int)
-            sma_crossover_times = df.index[df.index.isin(df['SMA_30'].dropna().index[sma_crossover_indices])]
+            sma_crossover_times = valid_dates[sma_crossover_indices]
 
             fig.add_trace(go.Scatter(
                 x=sma_crossover_times,
@@ -167,19 +182,18 @@ def plot_indicators(df, indicators, fig, symbol_index, colors):
                 name=f'{df.symbol[0]} SMA30/SMA50 Crossovers'
             ))
 
+            # Crossover tarihleri ve ilgili bilgileri crossover_dates listesine ekleyin
             for time in sma_crossover_times:
                 price_at_crossover = df['close'].loc[time]
                 crossover_dates.append({
                     'Symbol': df.symbol[0],
                     'Date': time,
                     'Intersecting Indicators': 'SMA30/SMA50',
-                    'Trend': 'Uptrend' if df['SMA_30'].loc[time] > df['SMA_50'].loc[time] else 'Downtrend',
+                    'Signal': 'Buy' if df['SMA_30'].loc[time] > df['SMA_50'].loc[time] else 'Sell',
                     'Price': price_at_crossover,
-                    'interval' : interval_option
+                    'interval': interval_option
                 })
 
-
-        crossover_dates.extend({'Symbol': df.symbol[0], 'Date': time, 'Intersecting Indicators': 'SMA30/SMA50'} for time in sma_crossover_times)
 
         # # Kesişim yorumlarını ekle
         # for time in sma_crossover_times:
@@ -193,6 +207,7 @@ def plot_indicators(df, indicators, fig, symbol_index, colors):
         #         st.write("Eylem: Traderlar, satış pozisyonları açabilirler veya mevcut uzun pozisyonlarını kapatabilirler.")
 
         # EMA12 hesaplama ve grafiğe ekleme
+  # EMA12 hesaplama ve grafiğe ekleme
     if "EMA12" in indicators:
         df['EMA_12'] = df['close'].ewm(span=12, adjust=False).mean()
         fig.add_trace(go.Scatter(x=df.index, y=df['EMA_12'], mode='lines', name=f'{df.symbol[0]} EMA 12',
@@ -206,9 +221,13 @@ def plot_indicators(df, indicators, fig, symbol_index, colors):
 
         # EMA12 ve EMA26 crossover analizi
         if "EMA12" in indicators:
-            ema_crossover_indices = find_crossovers(df['EMA_12'].dropna(), df['EMA_26'].dropna())
+            ema_valid_dates = df.dropna(subset=['EMA_12', 'EMA_26']).index
+            ema12_valid = df['EMA_12'].reindex(ema_valid_dates)
+            ema26_valid = df['EMA_26'].reindex(ema_valid_dates)
+            
+            ema_crossover_indices = find_crossovers(ema12_valid, ema26_valid)
             ema_crossover_indices = ema_crossover_indices.astype(int)
-            ema_crossover_times = df.index[df.index.isin(df['EMA_12'].dropna().index[ema_crossover_indices])]
+            ema_crossover_times = ema_valid_dates[ema_crossover_indices]
 
             fig.add_trace(go.Scatter(
                 x=ema_crossover_times,
@@ -222,7 +241,7 @@ def plot_indicators(df, indicators, fig, symbol_index, colors):
                 'Symbol': df.symbol[0],
                 'Date': time,
                 'Intersecting Indicators': 'EMA12/EMA26',
-                'Trend': 'Uptrend' if df['EMA_12'].loc[time] > df['EMA_26'].loc[time] else 'Downtrend',
+                'Signal': 'Buy' if df['EMA_12'].loc[time] > df['EMA_26'].loc[time] else 'Sell',
                 'Price': df['close'].loc[time],
                 'interval': interval_option
             } for time in ema_crossover_times)
@@ -240,10 +259,14 @@ def plot_indicators(df, indicators, fig, symbol_index, colors):
             line=dict(color=get_next_color(colors, symbol_index + 6))))
 
         # WMA14 ve WMA30 crossover analizi
-        if "WMA14" in indicators:
-            wma_crossover_indices = find_crossovers(df['WMA_14'].dropna(), df['WMA_30'].dropna())
+        if "WMA14" in indicators and "WMA30" in indicators:
+            wma_valid_dates = df.dropna(subset=['WMA_14', 'WMA_30']).index
+            wma14_valid = df['WMA_14'].reindex(wma_valid_dates)
+            wma30_valid = df['WMA_30'].reindex(wma_valid_dates)
+            
+            wma_crossover_indices = find_crossovers(wma14_valid, wma30_valid)
             wma_crossover_indices = wma_crossover_indices.astype(int)
-            wma_crossover_times = df.index[df.index.isin(df['WMA_14'].dropna().index[wma_crossover_indices])]
+            wma_crossover_times = wma_valid_dates[wma_crossover_indices]
 
             fig.add_trace(go.Scatter(
                 x=wma_crossover_times,
@@ -257,7 +280,7 @@ def plot_indicators(df, indicators, fig, symbol_index, colors):
                 'Symbol': df.symbol[0],
                 'Date': time,
                 'Intersecting Indicators': 'WMA14/WMA30',
-                'Trend': 'Uptrend' if df['WMA14'].loc[time] > df['WMA30'].loc[time] else 'Downtrend',
+                'Signal': 'Buy' if df['WMA_14'].loc[time] > df['WMA_30'].loc[time] else 'Sell',
                 'Price': df['close'].loc[time],
                 'interval': interval_option
             } for time in wma_crossover_times)
@@ -274,9 +297,13 @@ def plot_indicators(df, indicators, fig, symbol_index, colors):
 
         # MACD ve Signal Line crossover analizi
         if "MACD12" in indicators:
-            macd_crossover_indices = find_crossovers(df['MACD'].dropna(), df['Signal_Line'].dropna())
+            macd_valid_dates = df.dropna(subset=['MACD', 'Signal_Line']).index
+            macd_valid = df['MACD'].reindex(macd_valid_dates)
+            signal_line_valid = df['Signal_Line'].reindex(macd_valid_dates)
+            
+            macd_crossover_indices = find_crossovers(macd_valid, signal_line_valid)
             macd_crossover_indices = macd_crossover_indices.astype(int)
-            macd_crossover_times = df.index[df.index.isin(df['MACD'].dropna().index[macd_crossover_indices])]
+            macd_crossover_times = macd_valid_dates[macd_crossover_indices]
 
             fig.add_trace(go.Scatter(
                 x=macd_crossover_times,
@@ -290,11 +317,12 @@ def plot_indicators(df, indicators, fig, symbol_index, colors):
                 'Symbol': df.symbol[0],
                 'Date': time,
                 'Intersecting Indicators': 'MACD/Signal Line',
-                'Trend': 'Bullish' if df['MACD'].loc[time] > df['Signal_Line'].loc[time] else 'Bearish',
+                'Signal': 'Buy' if df['MACD'].loc[time] > df['Signal_Line'].loc[time] else 'Sell',
                 'Price': df['close'].loc[time],
                 'interval': interval_option
             } for time in macd_crossover_times)
-            
+                
+    
     if "RSI" in indicators:
         delta = df['close'].diff()
         gain = delta.where(delta > 0, 0).rolling(window=14).mean()
@@ -304,15 +332,30 @@ def plot_indicators(df, indicators, fig, symbol_index, colors):
 
         fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], mode='lines', name=f'{df.symbol[0]} RSI',
             line=dict(color=get_next_color(colors, symbol_index + 9))))
-    
-     # Identify signals
-        crossover_dates = []
-        for i in range(1, len(df)):
-            if df['RSI'][i-1] < 30 and df['RSI'][i] >= 30:
-                crossover_dates.append(('Buy', df.index[i], df['symbol'][i], df['close'][i], df['RSI'][i]))
-            elif df['RSI'][i-1] > 70 and df['RSI'][i] <= 70:
-                crossover_dates.append(('Sell', df.index[i], df['symbol'][i], df['close'][i], df['RSI'][i]))
 
+        # Identify signals
+        
+        for i in range(1, len(df)):
+            if df['RSI'][i-1] >= 30 and df['RSI'][i] < 30:
+                crossover_dates.append({
+                    'Symbol': df['symbol'][i],
+                    'Date': df.index[i],
+                    'Intersecting Indicators': 'RSI',
+                    'Signal': 'Sell',
+                    'Price': df['close'][i],  # Use the index directly
+                    'interval': interval_option
+                })
+            elif df['RSI'][i-1] <= 70 and df['RSI'][i] > 70:
+                crossover_dates.append({
+                    'Symbol': df['symbol'][i],
+                    'Date': df.index[i],
+                    'Intersecting Indicators': 'RSI',
+                    'Signal': 'Buy',
+                    'Price': df['close'][i],  # Use the index directly
+                    'interval': interval_option
+                })
+                
+  
         # # Store signals in PostgreSQL
         # conn = psycopg2.get_db_connection()
         # cur = conn.cursor()
