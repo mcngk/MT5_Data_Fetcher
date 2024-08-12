@@ -6,6 +6,7 @@ import streamlit as st
 import plotly.graph_objs as go
 import numpy as np
 
+
 if not mt5.initialize():
     st.error("MetaTrader 5 initialization failed")
     mt5.shutdown()
@@ -19,6 +20,8 @@ def get_db_connection():
         password="123",
         host="localhost",
         port="5432"
+        
+    
     )
 
 def load_from_postgresql(symbol, interval):
@@ -36,7 +39,7 @@ def load_from_postgresql(symbol, interval):
     return df
 
 def save_to_postgresql(df, interval, symbol, start_date, end_date):
-    """Verileri PostgreSQL veritabanına kaydeder, varsa mevcut kayıtları kontrol eder"""
+    #Verileri PostgreSQL veritabanına kaydeder, varsa mevcut kayıtları kontrol eder
     conn = get_db_connection()
     cursor = conn.cursor()
     data_exists = False
@@ -68,7 +71,7 @@ def save_to_postgresql(df, interval, symbol, start_date, end_date):
         st.success(f"DB'de {symbol} sembolü, {interval_option} intervali ve {start_date} - {end_date} tarih aralığı için veri bulunmuyor")
 
 def insert_crossover_dates(crossover_dates):
-    """Crossover tarihlerini PostgreSQL veritabanına ekler."""
+    #Crossover tarihlerini PostgreSQL veritabanına ekler.
     conn = get_db_connection()
     cursor = conn.cursor()
     for record in crossover_dates:
@@ -89,19 +92,17 @@ def find_crossovers(series1, series2):
     crossover_indices = np.where(np.diff(np.sign(diff)))[0] + 1
     return crossover_indices
 
-def remove_duplicate_crossovers(crossover_dates, time_threshold=timedelta(minutes=1)):
-    """
-    Kesişim noktaları arasında 1 dakika içinde tekrar olanları iptal eder.
-    """
-    unique_dates = []
-    last_date = None
+# def remove_duplicate_crossovers(crossover_dates, time_threshold=timedelta(minutes=1)):
+#     #Kesişim noktaları arasında 1 dakika içinde tekrar olanları iptal eder.
+#     unique_dates = []
+#     last_date = None
     
-    for date in sorted(crossover_dates, key=lambda x: x['Date']):
-        if last_date is None or (date['Date'] - last_date) > time_threshold:
-            unique_dates.append(date)
-            last_date = date['Date']
+#     for date in sorted(crossover_dates, key=lambda x: x['Date']):
+#         if last_date is None or (date['Date'] - last_date) > time_threshold:
+#             unique_dates.append(date)
+#             last_date = date['Date']
     
-    return unique_dates
+#     return unique_dates
 
 def plot_indicators(df, indicators, fig, symbol_index, colors):
     """İndikatörleri hesaplar ve grafiğe ekler, kesişim noktalarını bulur ve veritabanına ekler."""
@@ -197,19 +198,7 @@ def plot_indicators(df, indicators, fig, symbol_index, colors):
                     'Price': price_at_crossover,
                     'interval': interval_option
                 })
-
-
-        # # Kesişim yorumlarını ekle
-        # for time in sma_crossover_times:
-        #     if df['SMA_30'].loc[time] > df['SMA_50'].loc[time]:
-        #         st.write(f"**{df.symbol[0]} {time} tarihinde SMA30, SMA50'yi aşağıdan yukarıya kesti (Golden Cross).**")
-        #         st.write("Yorum: Bu durum genellikle yükseliş trendinin başladığını veya güçlendiğini gösterir. SMA30'un daha kısa dönemli olması nedeniyle, fiyatların SMA50'nin üzerinde olduğuna işaret eder ve bu durum, genellikle alım sinyali olarak değerlendirilir.")
-        #         st.write("Eylem: Traderlar, alım pozisyonları açabilirler veya mevcut uzun pozisyonlarını koruyabilirler.")
-        #     elif df['SMA_30'].loc[time] < df['SMA_50'].loc[time]:
-        #         st.write(f"**{df.symbol[0]} {time} tarihinde SMA30, SMA50'yi yukarıdan aşağıya kesti (Death Cross).**")
-        #         st.write("Yorum: Bu kesişim, genellikle düşüş trendinin başladığını veya güçlendiğini gösterir. SMA30'un SMA50'yi aşağıdan yukarıya kesmesi, fiyatların daha düşük bir trendde olduğunu ve bu durumun genellikle satış sinyali olarak değerlendirilmesine yol açabilir.")
-        #         st.write("Eylem: Traderlar, satış pozisyonları açabilirler veya mevcut uzun pozisyonlarını kapatabilirler.")
-
+ 
         # EMA12 hesaplama ve grafiğe ekleme
     if "EMA12" in indicators:
         df['EMA_12'] = df['close'].ewm(span=12, adjust=False).mean()
@@ -396,22 +385,9 @@ def plot_indicators(df, indicators, fig, symbol_index, colors):
                     'Price': df['close'][i],  # Use the index directly
                     'interval': interval_option
                 })           
-    return remove_duplicate_crossovers(crossover_dates)
+    return crossover_dates
 
-def plot_candlestick_chart(df, fig, symbol_index, colors):
-    """Mum grafiğini çizer ve grafik üzerine ekler."""
-    fig.add_trace(go.Candlestick(
-        x=df.index,
-        open=df['open'],
-        high=df['high'],
-        low=df['low'],
-        close=df['close'],
-        name=f'{df.symbol[0]} Candlestick',
-        increasing=dict(line=dict(color='green')),
-        decreasing=dict(line=dict(color='red'))
-        
-    ))
-
+ 
 # Streamlit arayüzünü oluştur
 st.title("MT5 Data Fetcher and Technical Indicators")
 
@@ -423,8 +399,8 @@ symbols = st.session_state.get('symbols', default_symbols)
 
 # Kullanıcıdan sembol ve tarih aralığını al
 selected_symbols = st.multiselect("Select the symbols:", symbols, default=symbols)
-start_date = st.date_input("Enter the start date:", datetime(2000, 7, 27))
-end_date = st.date_input("Enter the end date:", datetime(2024, 8, 9))
+start_date = st.date_input("Enter the start date:", datetime(2024, 7, 1))
+end_date = st.date_input("Enter the end date:", datetime(2024, 8, 12))
 
 # Zaman dilimi seçenekleri
 intervals = {
@@ -443,7 +419,7 @@ timeframe = intervals[interval_option]
 # İndikatör seçimleri
 indicators = st.multiselect("Select the indicators to display:", [
     "MA20", "MA50", "MACD12", "MACD26", "RSI-30-70", "RSI-20-80" ,"SMA30", "SMA50", "EMA12", "EMA26", "WMA14", "WMA30"], 
-    default=["SMA30", "SMA50"])
+    default=["MA20", "MA50", "MACD12", "MACD26", "RSI-30-70", "RSI-20-80" ,"SMA30", "SMA50", "EMA12", "EMA26", "WMA14", "WMA30"])
 
 # Renk paleti tanımla
 colors = [
@@ -457,6 +433,40 @@ def get_next_color(colors, index):
     else:
         return colors[index % len(colors)]
     
+from datetime import timedelta
+
+def process_data_for_intervals(symbol, start_date, end_date, intervals):
+    total_rows = 0
+
+    for interval in intervals:
+        current_date = start_date
+
+        while current_date < end_date:
+            if interval == 1:  # Eğer interval 1 ise, iki aylık dilimler kullan
+                next_month = current_date + timedelta(days=60)  # Ortalama iki ay
+                if next_month > end_date:
+                    next_month = end_date
+            else:  # Diğer interval değerleri için mevcut kodu kullan
+                next_month = current_date + timedelta(days=1)
+                if next_month > end_date:
+                    next_month = end_date
+
+            df = load_from_postgresql(symbol, interval)
+
+            # İşlem yapın, analiz edin veya veriyi kaydedin
+            # save_to_postgresql(df, interval, symbol, current_date, next_month)
+            
+            # Toplam satır sayısını güncelle
+            total_rows += len(df)
+            
+            # Sonraki döngüde kullanılacak tarihi güncelle
+            current_date = next_month
+
+            # Eğer current_date end_date'e eşitse veya daha büyükse, döngüyü durdur
+            if current_date >= end_date:
+                break
+
+    st.write(f"Toplam {total_rows} satir işlendi.")
 
 
 if st.button("Fetch Data"):
@@ -485,12 +495,14 @@ if st.button("Fetch Data"):
         save_to_postgresql(df, interval_option, symbol, start_date, end_date)
 
         # Mum grafiğini çiz
-        plot_candlestick_chart(df, fig, symbol_index, colors)
+        #plot_candlestick_chart(df, fig, symbol_index, colors)
+
+        process_data_for_intervals(symbol, start_date, end_date, intervals)
 
         # İndikatörleri hesapla ve grafiğe ekle
         crossover_dates.extend(plot_indicators(df, indicators, fig, symbol_index, colors))
 
-    # # Tüm grafiği göster
+    # Tüm grafiği göster
     #st.plotly_chart(fig)
     
     # Crossover tarihlerini tablosunu göster ve PostgreSQL'e ekle
@@ -507,6 +519,7 @@ if st.button("Fetch Data"):
         st.write(f"**{symbol}**")
         df_from_db = load_from_postgresql(symbol, interval_option)  
         st.dataframe(df_from_db)
+
 
 # Programın sonu
 mt5.shutdown()
